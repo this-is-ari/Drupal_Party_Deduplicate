@@ -1,0 +1,6 @@
+name = Party Unique
+description = Avoid Party entity duplicates.
+core = 7.x
+package = Party
+version = "7.x-1.x-dev"
+project = "party_unique"

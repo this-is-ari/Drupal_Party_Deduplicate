@@ -1,0 +1,72 @@
+<?php
+
+/**
+ * @file
+ */
+function party_unique_form_flexiform__create_party_form_alter(&$form, $form_state) {
+  if ($form['#flexiform']->entities['base_entity']['entity_type'] == 'party') {
+    $email_sources = variable_get('party_unique_email_sources', '');
+    //profile_individual:field:field_individual_email
+    if ($email_sources) {
+      $form_elements = array_keys($form['#flexiform']->elements);
+      // Elements at form has an extra string in name ':field:'.
+      foreach ($email_sources as $i => $source) {
+        $source = str_replace('profile2', 'profile', str_replace(':', ':field:', $source));
+        if (in_array($source, $form_elements)) {
+           array_unshift($form['actions']['submit']['#submit'],  'party_unique_form_flexiform__create_party_form_submit');
+        }
+      }
+    }
+  }
+  #dpm($form);
+}
+
+function party_unique_form_flexiform__create_party_form_submit($form, &$form_state) {
+  dpm('submit');
+  #dpm($form);
+  dpm($form_state);
+  #exit;
+
+
+
+// $form_state['field']['#parents/base_entity/#fields/party_hat/und/instance/default_value/0/hat_name - name of hat
+$form_state['values']['base_entity']['party_hat']['und']['0']['hat_name'] == individual;
+$form_state['values']['profile_individual']; //list of fields at form.
+// Individual (Machine name: individual)
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function party_unique_form_party_primary_fields_edit_field_alter(&$form, &$form_state) {
+  if ($form['#target'] == 'email' && isset($form['options'])) {
+    if (!isset($form['options'])) {
+      $form['options'] = array(
+        '#type' => 'fieldset',
+        '#title' => t('Settings'),
+      );
+    }
+    $form['options']['party_unique'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Merge Parties with the same email'),
+      '#description' => t('If another Party with the same email address already exists datasets will be attached to existing Party instead of creation duplicate.'),
+      '#default_value' => variable_get('party_unique_email', FALSE),
+    );
+  }
+  $form['#submit'][] = 'party_unique_form_party_primary_fields_edit_field_submit';
+  #dpm($form);
+}
+
+/**
+ * Form submitter for 'party_primary_fields_edit_field' form.
+ */
+function party_unique_form_party_primary_fields_edit_field_submit($form, &$form_state) {
+  if ($form['#target'] == 'email') {
+    variable_set('party_unique_email', (bool)$form_state['values']['party_unique']);
+    variable_set('party_unique_email_sources', array_keys($form_state['values']['sources']));
+
+    dpm(variable_get('party_unique_email_sources', ''));
+    dpm($form_state);
+    dpm($form);
+  }
+}
