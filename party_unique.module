@@ -3,37 +3,6 @@
 /**
  * @file
  */
-function party_unique_form_flexiform__create_party_form_alter(&$form, $form_state) {
-  if ($form['#flexiform']->entities['base_entity']['entity_type'] == 'party') {
-    $email_sources = variable_get('party_unique_email_sources', '');
-    //profile_individual:field:field_individual_email
-    if ($email_sources) {
-      $form_elements = array_keys($form['#flexiform']->elements);
-      // Elements at form has an extra string in name ':field:'.
-      foreach ($email_sources as $i => $source) {
-        $source = str_replace('profile2', 'profile', str_replace(':', ':field:', $source));
-        if (in_array($source, $form_elements)) {
-           array_unshift($form['actions']['submit']['#submit'],  'party_unique_form_flexiform__create_party_form_submit');
-        }
-      }
-    }
-  }
-  #dpm($form);
-}
-
-function party_unique_form_flexiform__create_party_form_submit($form, &$form_state) {
-  dpm('submit');
-  #dpm($form);
-  dpm($form_state);
-  #exit;
-
-
-
-// $form_state['field']['#parents/base_entity/#fields/party_hat/und/instance/default_value/0/hat_name - name of hat
-$form_state['values']['base_entity']['party_hat']['und']['0']['hat_name'] == individual;
-$form_state['values']['profile_individual']; //list of fields at form.
-// Individual (Machine name: individual)
-}
 
 /**
  * Implements hook_form_FORM_ID_alter().
@@ -54,7 +23,6 @@ function party_unique_form_party_primary_fields_edit_field_alter(&$form, &$form_
     );
   }
   $form['#submit'][] = 'party_unique_form_party_primary_fields_edit_field_submit';
-  #dpm($form);
 }
 
 /**
@@ -62,11 +30,56 @@ function party_unique_form_party_primary_fields_edit_field_alter(&$form, &$form_
  */
 function party_unique_form_party_primary_fields_edit_field_submit($form, &$form_state) {
   if ($form['#target'] == 'email') {
-    variable_set('party_unique_email', (bool)$form_state['values']['party_unique']);
+    variable_set('party_unique_email', (bool) $form_state['values']['party_unique']);
     variable_set('party_unique_email_sources', array_keys($form_state['values']['sources']));
-
-    dpm(variable_get('party_unique_email_sources', ''));
-    dpm($form_state);
-    dpm($form);
   }
+}
+
+/**
+ * Implements hook_party_primary_fields_alter().
+ */
+function party_unique_party_primary_fields_alter(Party $party, &$needs_store) {
+  $merge_parties = variable_get('party_unique_email', FALSE);
+
+  if (!empty($party->email) && $merge_parties) {
+    $query = party_query();
+    $query->fields('party');
+    $query->range(0, 1);
+    $query->condition('email', $party->email);
+
+    // If already saved,.
+    if (!empty($party->pid)) {
+      $query->condition('pid', $party->pid, '!=');
+    }
+
+    if ($match = $query->execute()->fetchAssoc()) {
+      $exparty_pid = $match['pid'];
+      $extparty = party_load($exparty_pid);
+      party_unique_merge($extparty, $party);
+    }
+  }
+}
+
+/**
+ * Party merging function.
+ * Parameters: master party object, merging party object that duplicates master party.
+ */
+function party_unique_merge($masterparty, $mergerparty) {
+  $data_sets = party_get_party_data_sets($mergerparty);
+  if (count($data_sets)) {
+    foreach ($data_sets as $data_set) {
+      $mergercontroller = $mergerparty->getDataSetController($data_set);
+      $ids = $mergercontroller->getEntityIds();
+      if (count($ids)) {
+        $mastercontroller = $masterparty->getDataSetController($data_set);
+        $mastercontroller->attachEntity($mergercontroller->getEntity());
+        $mergercontroller->detachEntity($mergercontroller->getEntity());
+        $mergercontroller->save();
+        $mastercontroller->save(TRUE);
+      }
+    }
+  }
+  $mergerparty->merged_party = $masterparty->pid;
+  $mergerparty->hidden = TRUE;
+  $mergerparty->save();
 }
