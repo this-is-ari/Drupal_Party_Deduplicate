@@ -1,10 +1,6 @@
 <?php
 
 /**
- * @file
- */
-
-/**
  * Implements hook_form_FORM_ID_alter().
  */
 function party_unique_form_party_primary_fields_edit_field_alter(&$form, &$form_state) {
@@ -39,23 +35,22 @@ function party_unique_form_party_primary_fields_edit_field_submit($form, &$form_
  * Implements hook_party_primary_fields_alter().
  */
 function party_unique_party_primary_fields_alter(Party $party, &$needs_store) {
-  $merge_parties = variable_get('party_unique_email', FALSE);
-
+	$merge_parties = variable_get('party_unique_email', FALSE);
   if (!empty($party->email) && $merge_parties) {
     $query = party_query();
     $query->fields('party');
     $query->range(0, 1);
     $query->condition('email', $party->email);
 
-    // If already saved,.
-    if (!empty($party->pid)) {
-      $query->condition('pid', $party->pid, '!=');
-    }
-
+		// If already merged
+		$query->condition('merged_party', 0);
     if ($match = $query->execute()->fetchAssoc()) {
       $exparty_pid = $match['pid'];
       $extparty = party_load($exparty_pid);
-      party_unique_merge($extparty, $party);
+			if($party->pid != $extparty->pid){
+				$party = party_unique_merge($extparty, $party);
+				//$party->delete();
+			}
     }
   }
 }
@@ -72,14 +67,15 @@ function party_unique_merge($masterparty, $mergerparty) {
       $ids = $mergercontroller->getEntityIds();
       if (count($ids)) {
         $mastercontroller = $masterparty->getDataSetController($data_set);
-        $mastercontroller->attachEntity($mergercontroller->getEntity());
-        $mergercontroller->detachEntity($mergercontroller->getEntity());
-        $mergercontroller->save();
-        $mastercontroller->save(TRUE);
+				$entity = $mergercontroller->getEntity();
+				$mastercontroller->attachEntity($entity); 
+				$mergercontroller->detachEntity($entity);                
+        $mastercontroller->save();
       }
     }
   }
   $mergerparty->merged_party = $masterparty->pid;
   $mergerparty->hidden = TRUE;
-  $mergerparty->save();
+  
+	return $mergerparty;
 }
