@@ -50,8 +50,13 @@ function party_unique_party_primary_fields_alter(Party $party, &$needs_store) {
 			if($party->pid != $extparty->pid){
 				$party = party_unique_merge($extparty, $party);
 				//$party->delete();
+				//dpm($extparty);
+				//dpm($party);
 			}
     }
+	else{
+		//dpm($party);
+	}		
   }
 }
 
@@ -61,6 +66,14 @@ function party_unique_party_primary_fields_alter(Party $party, &$needs_store) {
  */
 function party_unique_merge($masterparty, $mergerparty) {
   $data_sets = party_get_party_data_sets($mergerparty);
+	 //$data_sets = array_keys(db_select('party_attached_entity', 'ae')->fields('ae', array('entity_bundle'))->condition('pid', $mergerparty->pid, '=')->execute() ->fetchAllAssoc('entity_bundle'));
+//dpm($data_sets);
+	// Merging hats
+	if(!isset($masterparty->party_hat['und']) OR !is_array($masterparty->party_hat['und'])) $masterparty->party_hat['und'] = array();
+	if(!isset($mergerparty->party_hat['und']) OR !is_array($mergerparty->party_hat['und'])) $mergerparty->party_hat['und'] = array();
+	$masterparty->party_hat['und'] = array_merge($masterparty->party_hat['und'], $mergerparty->party_hat['und']);
+	
+	$masterparty->save();
   if (count($data_sets)) {
     foreach ($data_sets as $data_set) {
       $mergercontroller = $mergerparty->getDataSetController($data_set);
@@ -68,8 +81,9 @@ function party_unique_merge($masterparty, $mergerparty) {
       if (count($ids)) {
         $mastercontroller = $masterparty->getDataSetController($data_set);
 				$entity = $mergercontroller->getEntity();
+				//dpm($entity);
 				$mastercontroller->attachEntity($entity); 
-				$mergercontroller->detachEntity($entity);                
+				//$mergercontroller->detachEntity($entity);                
         $mastercontroller->save();
       }
     }
