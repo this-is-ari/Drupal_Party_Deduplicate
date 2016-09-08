@@ -4,6 +4,7 @@
  * Implements hook_form_FORM_ID_alter().
  */
 function party_unique_form_party_primary_fields_edit_field_alter(&$form, &$form_state) {
+
   if ($form['#target'] == 'email' && isset($form['options'])) {
     if (!isset($form['options'])) {
       $form['options'] = array(
@@ -27,37 +28,54 @@ function party_unique_form_party_primary_fields_edit_field_alter(&$form, &$form_
 function party_unique_form_party_primary_fields_edit_field_submit($form, &$form_state) {
   if ($form['#target'] == 'email') {
     variable_set('party_unique_email', (bool) $form_state['values']['party_unique']);
-    variable_set('party_unique_email_sources', array_keys($form_state['values']['sources']));
   }
 }
 
 /**
  * Implements hook_party_primary_fields_alter().
  */
-function party_unique_party_primary_fields_alter(Party $party, &$needs_store) {
-	$merge_parties = variable_get('party_unique_email', FALSE);
-  if (!empty($party->email) && $merge_parties) {
-    $query = party_query();
-    $query->fields('party');
-    $query->range(0, 1);
-    $query->condition('email', $party->email);
+function party_unique_party_primary_fields_alter($party) {
 
-		// If already merged
-		$query->condition('merged_party', 0);
-    if ($match = $query->execute()->fetchAssoc()) {
-      $exparty_pid = $match['pid'];
-      $extparty = party_load($exparty_pid);
-			if($party->pid != $extparty->pid){
-				$party = party_unique_merge($extparty, $party);
-				//$party->delete();
-				//dpm($extparty);
-				//dpm($party);
+		$merge_parties = variable_get('party_unique_email', FALSE);
+		$merge_var = variable_get('party_unique_mergefields', array());
+		$merge_fields = array();
+		$pwrapper = entity_metadata_wrapper('party', $party);
+
+		// Create array with merging fields and values
+		foreach($merge_var as $fname => $enabled){
+			$fvalue = $pwrapper->$fname->value();
+			if(($enabled) && isset($fvalue)){
+				$merge_fields[$fname] = $fvalue;
 			}
-    }
-	else{
-		//dpm($party);
-	}		
-  }
+		}
+
+		if (count($merge_fields) || $merge_parties) {
+			
+			$db_or = db_or();
+			$query = party_query('p');
+			
+			foreach($merge_fields as $fname => $fvalue){
+				$query->leftJoin('field_data_'.$fname, $fname, $fname.'.entity_id = p.pid');
+				$db_or->condition($fname.'_value', $fvalue);
+			}
+			$db_or->condition('p.email', $party->email);
+			
+			$query->fields('p');
+			$query->range(0, 1);
+			$query->condition($db_or);
+			$query->orderBy('p.pid', 'ASC');
+
+			$query->condition('merged_party', 0);
+			if ($match = $query->execute()->fetchAssoc()) {
+				$exparty_pid = $match['pid'];
+				$extparty = party_load($exparty_pid);
+				if($party->pid != $extparty->pid){
+					$party = party_unique_merge($extparty, $party);
+				}
+			}	
+		}
+
+	return $party;
 }
 
 /**
@@ -66,8 +84,7 @@ function party_unique_party_primary_fields_alter(Party $party, &$needs_store) {
  */
 function party_unique_merge($masterparty, $mergerparty) {
   $data_sets = party_get_party_data_sets($mergerparty);
-	 //$data_sets = array_keys(db_select('party_attached_entity', 'ae')->fields('ae', array('entity_bundle'))->condition('pid', $mergerparty->pid, '=')->execute() ->fetchAllAssoc('entity_bundle'));
-//dpm($data_sets);
+
 	// Merging hats
 	if(!isset($masterparty->party_hat['und']) OR !is_array($masterparty->party_hat['und'])) $masterparty->party_hat['und'] = array();
 	if(!isset($mergerparty->party_hat['und']) OR !is_array($mergerparty->party_hat['und'])) $mergerparty->party_hat['und'] = array();
@@ -81,9 +98,7 @@ function party_unique_merge($masterparty, $mergerparty) {
       if (count($ids)) {
         $mastercontroller = $masterparty->getDataSetController($data_set);
 				$entity = $mergercontroller->getEntity();
-				//dpm($entity);
-				$mastercontroller->attachEntity($entity); 
-				//$mergercontroller->detachEntity($entity);                
+				$mastercontroller->attachEntity($entity);           
         $mastercontroller->save();
       }
     }
@@ -92,4 +107,36 @@ function party_unique_merge($masterparty, $mergerparty) {
   $mergerparty->hidden = TRUE;
   
 	return $mergerparty;
+}
+
+function party_unique_field_widget_info_alter(&$info) {
+	$info['party_primary_field']['settings']['deduplicate'] = 0;
+}
+								
+function party_unique_form_field_ui_field_edit_form_alter(&$form, &$form_state) {
+  if ($form['#instance']['widget']['type'] == 'party_primary_field') {
+		$merge_var = variable_get('party_unique_mergefields', array());
+    $form['party_unique_settings'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Party unique settings'),
+      '#target' => $form['#field']['field_name'],
+      '#parents' => array('instance', 'widget', 'settings', 'deduplicate'),
+      '#weight' => 0,
+			'#tree' => TRUE,
+			'merge' => array(
+				'#type' => 'checkbox',
+				'#title' => t('Merge Parties with the same values'),
+				'#default_value' => $merge_var[$form['#field']['field_name']],
+			),
+    );
+		$form['#submit'][] = 'party_unique_form_field_ui_field_edit_form_submit';
+  }
+}
+
+function party_unique_form_field_ui_field_edit_form_submit(&$form, &$form_state){
+	$merge_var = variable_get('party_unique_mergefields', array());
+	$fname = $form['#field']['field_name'];
+	$mval = $form['party_unique_settings']['merge']['#value'];
+	$merge_var[$fname] = $mval;
+	variable_set('party_unique_mergefields', $merge_var);
 }
