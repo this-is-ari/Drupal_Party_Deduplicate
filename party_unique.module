@@ -31,11 +31,17 @@ function party_unique_form_party_primary_fields_edit_field_submit($form, &$form_
   }
 }
 
-/**
- * Implements hook_party_primary_fields_alter().
- */
-function party_unique_party_primary_fields_alter($party) {
+function party_unique_entity_update($entity, $type) {
+	if($type == "party"){
+		$party = $entity;
 
+		if(empty($party->merged_party)){
+			drupal_register_shutdown_function('party_unique_shutdown_merge', $party);
+		}
+	}
+}
+
+function party_unique_shutdown_merge($party){
 		$merge_parties = variable_get('party_unique_email', FALSE);
 		$merge_var = variable_get('party_unique_mergefields', array());
 		$merge_fields = array();
@@ -44,7 +50,7 @@ function party_unique_party_primary_fields_alter($party) {
 		// Create array with merging fields and values
 		foreach($merge_var as $fname => $enabled){
 			$fvalue = $pwrapper->$fname->value();
-			if(($enabled) && isset($fvalue)){
+			if(($enabled) && !empty($fvalue)){
 				$merge_fields[$fname] = $fvalue;
 			}
 		}
@@ -71,11 +77,10 @@ function party_unique_party_primary_fields_alter($party) {
 				$extparty = party_load($exparty_pid);
 				if($party->pid != $extparty->pid){
 					$party = party_unique_merge($extparty, $party);
+					$party->save();
 				}
 			}	
 		}
-
-	return $party;
 }
 
 /**
@@ -88,7 +93,7 @@ function party_unique_merge($masterparty, $mergerparty) {
 	// Merging hats
 	if(!isset($masterparty->party_hat['und']) OR !is_array($masterparty->party_hat['und'])) $masterparty->party_hat['und'] = array();
 	if(!isset($mergerparty->party_hat['und']) OR !is_array($mergerparty->party_hat['und'])) $mergerparty->party_hat['und'] = array();
-	$masterparty->party_hat['und'] = array_merge($masterparty->party_hat['und'], $mergerparty->party_hat['und']);
+	$masterparty->party_hat['und'] = array_unique(array_merge($masterparty->party_hat['und'], $mergerparty->party_hat['und']), SORT_REGULAR);
 	
 	$masterparty->save();
   if (count($data_sets)) {
@@ -105,7 +110,7 @@ function party_unique_merge($masterparty, $mergerparty) {
   }
   $mergerparty->merged_party = $masterparty->pid;
   $mergerparty->hidden = TRUE;
-  
+  $masterparty->save();
 	return $mergerparty;
 }
 
